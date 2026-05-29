@@ -3,6 +3,11 @@ nav:
   - Home: index.md
   - Usage: usage.md
   - Examples: examples.md
+  - Architecture: architecture.md
+  - Observability: observability.md
+  - Best Practices: best_practices.md
+  - Migration: migration.md
+  - Benchmarks: benchmarks.md
 
 theme:
   name: material
