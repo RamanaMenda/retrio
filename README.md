@@ -90,6 +90,52 @@ def fetch() -> str:
     raise RuntimeError("transient")
 
 
+## Resilience Features
+
+Retrio includes simple resilience building blocks you can opt into via `RetryConfig`:
+
+- `CircuitBreaker` — a small thread-safe circuit breaker (closed/open/half-open).
+- `TokenBucket` — a token-bucket rate limiter for graceful throttling.
+
+Examples
+
+Circuit breaker example:
+
+```python
+from retrio import retry, RetryConfig, CircuitBreaker
+
+cb = CircuitBreaker(failure_threshold=3, recovery_timeout=30.0)
+
+@retry(RetryConfig(max_attempts=3, circuit_breaker=cb))
+def unreliable() -> str:
+    raise RuntimeError("transient")
+
+try:
+    unreliable()
+except RuntimeError:
+    print("operation failed and recorded by circuit breaker")
+
+# after repeated failures, cb.is_open() becomes True and further calls fail fast
+```
+
+Rate limiter example:
+
+```python
+from retrio import retry, RetryConfig, TokenBucket
+
+limiter = TokenBucket(capacity=2, refill_rate=0.5)  # 2 tokens, 0.5 tokens/sec
+
+@retry(RetryConfig(max_attempts=2, rate_limiter=limiter))
+def send_request() -> str:
+    return "ok"
+
+print(send_request())
+```
+
+Combined behavior
+
+You can combine the two; the `RetryConfig` checks the rate limiter and circuit breaker before each attempt. If the limiter denies the attempt, the retry raises a `RuntimeError("rate limited")`. If the circuit is open, it raises `RuntimeError("circuit open")` to fail fast.
+
 try:
     fetch()
 except RuntimeError:

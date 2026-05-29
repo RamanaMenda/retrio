@@ -205,14 +205,13 @@ async def _async_retry_call(func: Callable[..., Any], config: RetryConfig, *args
                     elapsed=monotonic() - start,
                 ),
             )
-            # inform circuit breaker of failure
-            if config.circuit_breaker is not None:
-                try:
-                    config.circuit_breaker.record_failure()
-                except Exception:
-                    pass
-
             if attempt >= config.max_attempts or not _should_retry(config, exc=exc):
+                # inform circuit breaker of external/terminal failure
+                if config.circuit_breaker is not None:
+                    try:
+                        config.circuit_breaker.record_failure()
+                    except Exception:
+                        pass
                 last_state = _emit_event(
                     config,
                     "retry_exhausted",
@@ -319,14 +318,13 @@ def _sync_retry_call(func: Callable[..., Any], config: RetryConfig, *args: Any, 
                     elapsed=monotonic() - start,
                 ),
             )
-            # inform circuit breaker of failure
-            if config.circuit_breaker is not None:
-                try:
-                    config.circuit_breaker.record_failure()
-                except Exception:
-                    pass
-
             if attempt >= config.max_attempts or not _should_retry(config, exc=exc):
+                # inform circuit breaker of external/terminal failure
+                if config.circuit_breaker is not None:
+                    try:
+                        config.circuit_breaker.record_failure()
+                    except Exception:
+                        pass
                 last_state = _emit_event(
                     config,
                     "retry_exhausted",
