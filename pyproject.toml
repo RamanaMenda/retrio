@@ -29,6 +29,8 @@ dependencies = []
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
+otel = ["opentelemetry-api>=1.20.0"]
+prometheus = ["prometheus-client>=0.16.0"]
 
 [project.urls]
 Homepage = "https://github.com/your-org/retrio"
