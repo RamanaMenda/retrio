@@ -23,7 +23,7 @@ from ._observability import (
 F = TypeVar("F", bound=Callable[..., Any])
 
 
-@dataclass(slots=True)
+@dataclass
 class RetryState:
     """Immutable snapshot of retry state for hooks and logs."""
 
@@ -36,7 +36,7 @@ class RetryState:
     event: RetryEvent = "attempt_start"
 
 
-@dataclass(slots=True)
+@dataclass
 class RetryConfig:
     """Configuration for retry behavior across sync and async paths."""
 
