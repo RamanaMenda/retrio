@@ -14,6 +14,13 @@ from random import Random
 from time import monotonic, sleep
 from typing import Any, Callable, TypeVar
 
+from ._policies import (
+    RetryPredicate,
+    WaitPolicy,
+    retry_any,
+    retry_if_exception_type,
+    retry_if_result,
+)
 from ._observability import (
     RetryEvent,
     _emit_event,
@@ -47,6 +54,8 @@ class RetryConfig:
     jitter: str = "full"
     retry_exceptions: tuple[type[BaseException], ...] = (Exception,)
     retry_on_result: Callable[[Any], bool] | None = None
+    retry_predicate: RetryPredicate | None = None
+    wait_policy: WaitPolicy | None = None
     on_retry: Callable[[RetryState], None] | None = None
     on_success: Callable[[RetryState], None] | None = None
     on_failure: Callable[[RetryState], None] | None = None
@@ -105,6 +114,9 @@ class Retrying:
 
 
 def _compute_delay(config: RetryConfig, attempt: int) -> float:
+    if config.wait_policy is not None:
+        return config.wait_policy(attempt, config)
+
     delay = min(config.max_delay, config.initial_delay * (config.multiplier ** (attempt - 1)))
     if config.jitter == "none":
         return delay
@@ -113,12 +125,15 @@ def _compute_delay(config: RetryConfig, attempt: int) -> float:
     return config.random.random() * delay
 
 
-def _should_retry(config: RetryConfig, value: Any = None, exc: BaseException | None = None) -> bool:
-    if exc is not None:
-        return isinstance(exc, config.retry_exceptions)
+def _should_retry(config: RetryConfig, state: RetryState, value: Any = None, exc: BaseException | None = None) -> bool:
+    predicates = []
+    if config.retry_exceptions:
+        predicates.append(retry_if_exception_type(*config.retry_exceptions))
     if config.retry_on_result is not None:
-        return config.retry_on_result(value)
-    return False
+        predicates.append(retry_if_result(config.retry_on_result))
+    if config.retry_predicate is not None:
+        predicates.append(config.retry_predicate)
+    return retry_any(*predicates)(state, value, exc)
 
 
 async def _sleep(delay: float) -> None:
@@ -158,7 +173,7 @@ async def _async_retry_call(func: Callable[..., Any], config: RetryConfig, *args
             result = func(*args, **kwargs)
             if isawaitable(result):
                 result = await result
-            if attempt < config.max_attempts and _should_retry(config, value=result):
+            if attempt < config.max_attempts and _should_retry(config, last_state, value=result):
                 delay = _compute_delay(config, attempt)
                 last_state = _emit_event(
                     config,
@@ -203,7 +218,7 @@ async def _async_retry_call(func: Callable[..., Any], config: RetryConfig, *args
                     elapsed=monotonic() - start,
                 ),
             )
-            if attempt >= config.max_attempts or not _should_retry(config, exc=exc):
+            if attempt >= config.max_attempts or not _should_retry(config, last_state, exc=exc):
                 # inform circuit breaker of external/terminal failure
                 if config.circuit_breaker is not None:
                     try:
@@ -270,7 +285,7 @@ def _sync_retry_call(func: Callable[..., Any], config: RetryConfig, *args: Any, 
         )
         try:
             result = func(*args, **kwargs)
-            if attempt < config.max_attempts and _should_retry(config, value=result):
+            if attempt < config.max_attempts and _should_retry(config, last_state, value=result):
                 delay = _compute_delay(config, attempt)
                 last_state = _emit_event(
                     config,
@@ -316,7 +331,7 @@ def _sync_retry_call(func: Callable[..., Any], config: RetryConfig, *args: Any, 
                     elapsed=monotonic() - start,
                 ),
             )
-            if attempt >= config.max_attempts or not _should_retry(config, exc=exc):
+            if attempt >= config.max_attempts or not _should_retry(config, last_state, exc=exc):
                 # inform circuit breaker of external/terminal failure
                 if config.circuit_breaker is not None:
                     try:
