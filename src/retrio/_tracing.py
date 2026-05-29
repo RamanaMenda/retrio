@@ -33,10 +33,7 @@ class OpenTelemetryAdapter:
         if event == "attempt_start":
             # Try to use start_as_current_span if available
             try:
-                ctx = self.tracer.start_as_current_span(self.span_name, attributes={
-                    "retrio.attempt": state.attempt,
-                    "retrio.max_attempts": state.max_attempts,
-                })
+                ctx = self.tracer.start_as_current_span(self.span_name, attributes=self._attributes(event, state))
             except Exception:
                 # Fallback: tracer may expose start_span returning a span-like object
                 try:
@@ -66,7 +63,8 @@ class OpenTelemetryAdapter:
                 # set status attributes if span available
                 try:
                     if hasattr(span, "set_attribute"):
-                        span.set_attribute("retrio.event", event)
+                        for attr_name, attr_value in self._attributes(event, state).items():
+                            span.set_attribute(attr_name, attr_value)
                 except Exception:
                     pass
                 # exit context if possible
@@ -77,3 +75,15 @@ class OpenTelemetryAdapter:
                         span.end()
                 except Exception:
                     pass
+
+    def _attributes(self, event: str, state: Any) -> dict[str, Any]:
+        payload = {
+            "retrio.event": event,
+            "retrio.attempt": getattr(state, "attempt", None),
+            "retrio.max_attempts": getattr(state, "max_attempts", None),
+            "retrio.delay": getattr(state, "delay", None),
+            "retrio.elapsed": getattr(state, "elapsed", None),
+            "retrio.exception_type": state.exception.__class__.__name__ if getattr(state, "exception", None) is not None else None,
+            "retrio.result_type": type(state.result).__name__ if getattr(state, "result", None) is not None else None,
+        }
+        return {key: value for key, value in payload.items() if value is not None}

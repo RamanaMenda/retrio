@@ -142,3 +142,20 @@ try:
 except RuntimeError:
     pass
 ```
+
+## Datadog Integration
+
+Retrio provides a `DatadogAdapter` for reporting retry attempts and metrics to Datadog. The adapter accepts an optional `ddtrace` tracer and a `dogstatsd`/`statsd` client and operates in a best-effort manner if those libraries are not installed.
+
+Example (see `examples/datadog_example.py`):
+
+```python
+from retrio import retry, RetryConfig, DatadogAdapter
+
+adapter = DatadogAdapter(tracer=None, statsd=None)  # replace with real clients
+
+@retry(RetryConfig(max_attempts=3, on_event=adapter.on_event))
+def work():
+    ...
+```
+

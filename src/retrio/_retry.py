@@ -86,8 +86,8 @@ class RetryConfig:
             raise ValueError("jitter must be one of: none, equal, full")
         if self.callback_error_mode not in {"ignore", "raise"}:
             raise ValueError("callback_error_mode must be one of: ignore, raise")
-        if self.log_style not in {"pretty", "structured"}:
-            raise ValueError("log_style must be one of: pretty, structured")
+        if self.log_style not in {"pretty", "structured", "json"}:
+            raise ValueError("log_style must be one of: pretty, structured, json")
 
 
 class Retrying:

@@ -152,6 +152,34 @@ def test_structured_logging_emits_event_fields(caplog) -> None:
     assert any("event=attempt_success" in message for message in messages)
 
 
+def test_json_logging_emits_machine_readable_event_fields(caplog) -> None:
+    calls = {"count": 0}
+    logger = logging.getLogger("retrio.tests.json")
+
+    @retry(
+        RetryConfig(
+            max_attempts=2,
+            initial_delay=0.0,
+            max_delay=0.0,
+            jitter="none",
+            logger=logger,
+            enable_logging=True,
+            log_style="json",
+        )
+    )
+    def work() -> str:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise ValueError("boom")
+        return "ok"
+
+    with caplog.at_level(logging.DEBUG, logger="retrio.tests.json"):
+        assert work() == "ok"
+
+    assert any('"event": "retry_scheduled"' in record.message for record in caplog.records)
+    assert any('"outcome": "success"' in record.message for record in caplog.records)
+
+
 def test_async_event_hook_sequence() -> None:
     calls = {"count": 0}
     events = []

@@ -17,6 +17,7 @@ from ._policies import (
 )
 from ._tracing import OpenTelemetryAdapter
 from ._metrics import PrometheusAdapter
+from ._datadog import DatadogAdapter
 from ._circuit_breaker import CircuitBreaker
 from ._rate_limit import TokenBucket
 
@@ -36,6 +37,7 @@ __all__ = [
 	"constant_wait",
 	"exponential_wait",
 	"chain_wait_policies",
+	"DatadogAdapter",
 	"stop_after_attempt",
 	"stop_after_delay",
 	"stop_any",
