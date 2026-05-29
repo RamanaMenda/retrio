@@ -16,10 +16,12 @@ from typing import Any, Callable, TypeVar
 
 from ._policies import (
     RetryPredicate,
+    StopCondition,
     WaitPolicy,
     retry_any,
     retry_if_exception_type,
     retry_if_result,
+    stop_after_attempt,
 )
 from ._observability import (
     RetryEvent,
@@ -56,6 +58,7 @@ class RetryConfig:
     retry_on_result: Callable[[Any], bool] | None = None
     retry_predicate: RetryPredicate | None = None
     wait_policy: WaitPolicy | None = None
+    stop_condition: StopCondition | None = None
     on_retry: Callable[[RetryState], None] | None = None
     on_success: Callable[[RetryState], None] | None = None
     on_failure: Callable[[RetryState], None] | None = None
@@ -136,6 +139,12 @@ def _should_retry(config: RetryConfig, state: RetryState, value: Any = None, exc
     return retry_any(*predicates)(state, value, exc)
 
 
+def _should_stop(config: RetryConfig, state: RetryState) -> bool:
+    if config.stop_condition is not None:
+        return config.stop_condition(state)
+    return False
+
+
 async def _sleep(delay: float) -> None:
     import asyncio
 
@@ -174,6 +183,24 @@ async def _async_retry_call(func: Callable[..., Any], config: RetryConfig, *args
             if isawaitable(result):
                 result = await result
             if attempt < config.max_attempts and _should_retry(config, last_state, value=result):
+                if _should_stop(config, last_state):
+                    last_state = _emit_event(
+                        config,
+                        "attempt_success",
+                        RetryState(
+                            attempt=attempt,
+                            max_attempts=config.max_attempts,
+                            result=result,
+                            elapsed=monotonic() - start,
+                        ),
+                    )
+                    if config.circuit_breaker is not None:
+                        try:
+                            config.circuit_breaker.record_success()
+                        except Exception:
+                            pass
+                    _safe_state_callback(config, "on_success", config.on_success, last_state)
+                    return result
                 delay = _compute_delay(config, attempt)
                 last_state = _emit_event(
                     config,
@@ -218,7 +245,7 @@ async def _async_retry_call(func: Callable[..., Any], config: RetryConfig, *args
                     elapsed=monotonic() - start,
                 ),
             )
-            if attempt >= config.max_attempts or not _should_retry(config, last_state, exc=exc):
+            if attempt >= config.max_attempts or not _should_retry(config, last_state, exc=exc) or _should_stop(config, last_state):
                 # inform circuit breaker of external/terminal failure
                 if config.circuit_breaker is not None:
                     try:
@@ -286,6 +313,24 @@ def _sync_retry_call(func: Callable[..., Any], config: RetryConfig, *args: Any, 
         try:
             result = func(*args, **kwargs)
             if attempt < config.max_attempts and _should_retry(config, last_state, value=result):
+                if _should_stop(config, last_state):
+                    last_state = _emit_event(
+                        config,
+                        "attempt_success",
+                        RetryState(
+                            attempt=attempt,
+                            max_attempts=config.max_attempts,
+                            result=result,
+                            elapsed=monotonic() - start,
+                        ),
+                    )
+                    if config.circuit_breaker is not None:
+                        try:
+                            config.circuit_breaker.record_success()
+                        except Exception:
+                            pass
+                    _safe_state_callback(config, "on_success", config.on_success, last_state)
+                    return result
                 delay = _compute_delay(config, attempt)
                 last_state = _emit_event(
                     config,
@@ -331,7 +376,7 @@ def _sync_retry_call(func: Callable[..., Any], config: RetryConfig, *args: Any, 
                     elapsed=monotonic() - start,
                 ),
             )
-            if attempt >= config.max_attempts or not _should_retry(config, last_state, exc=exc):
+            if attempt >= config.max_attempts or not _should_retry(config, last_state, exc=exc) or _should_stop(config, last_state):
                 # inform circuit breaker of external/terminal failure
                 if config.circuit_breaker is not None:
                     try:

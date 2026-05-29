@@ -1,6 +1,7 @@
 from ._retry import RetryConfig, RetryEvent, RetryState, Retrying, retry
 from ._policies import (
 	RetryPredicate,
+	StopCondition,
 	WaitPolicy,
 	chain_wait_policies,
 	constant_wait,
@@ -9,6 +10,10 @@ from ._policies import (
 	retry_any,
 	retry_if_exception_type,
 	retry_if_result,
+	stop_all,
+	stop_any,
+	stop_after_attempt,
+	stop_after_delay,
 )
 from ._tracing import OpenTelemetryAdapter
 from ._metrics import PrometheusAdapter
@@ -22,6 +27,7 @@ __all__ = [
 	"Retrying",
 	"retry",
 	"RetryPredicate",
+	"StopCondition",
 	"WaitPolicy",
 	"retry_if_exception_type",
 	"retry_if_result",
@@ -30,6 +36,10 @@ __all__ = [
 	"constant_wait",
 	"exponential_wait",
 	"chain_wait_policies",
+	"stop_after_attempt",
+	"stop_after_delay",
+	"stop_any",
+	"stop_all",
 	"OpenTelemetryAdapter",
 	"PrometheusAdapter",
 	"CircuitBreaker",

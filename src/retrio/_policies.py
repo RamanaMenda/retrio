@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 RetryPredicateFn = Callable[[Any, Any | None, BaseException | None], bool]
 WaitPolicyFn = Callable[[int, Any, Any | None, BaseException | None], float]
+StopConditionFn = Callable[[Any], bool]
 
 
 @dataclass
@@ -65,6 +66,23 @@ class WaitPolicy:
             lambda attempt, config, state=None, value=None, exc=None: min(maximum, self(attempt, config, state, value, exc)),
             name=f"bounded({self.name}, {maximum})",
         )
+
+
+@dataclass
+class StopCondition:
+    """Composable stop condition wrapper."""
+
+    func: StopConditionFn
+    name: str = "custom"
+
+    def __call__(self, state: Any) -> bool:
+        return bool(self.func(state))
+
+    def __or__(self, other: StopCondition) -> StopCondition:
+        return StopCondition(lambda state: self(state) or other(state), name=f"({self.name} or {other.name})")
+
+    def __and__(self, other: StopCondition) -> StopCondition:
+        return StopCondition(lambda state: self(state) and other(state), name=f"({self.name} and {other.name})")
 
 
 def retry_if_exception_type(*exception_types: type[BaseException]) -> RetryPredicate:
@@ -127,4 +145,30 @@ def chain_wait_policies(*policies: WaitPolicy) -> WaitPolicy:
     combined = policies[0]
     for policy in policies[1:]:
         combined = combined + policy
+    return combined
+
+
+def stop_after_attempt(max_attempts: int) -> StopCondition:
+    return StopCondition(lambda state: state.attempt >= max_attempts, name=f"attempts>={max_attempts}")
+
+
+def stop_after_delay(max_elapsed: float) -> StopCondition:
+    return StopCondition(lambda state: state.elapsed >= max_elapsed, name=f"elapsed>={max_elapsed}")
+
+
+def stop_any(*conditions: StopCondition) -> StopCondition:
+    if not conditions:
+        return StopCondition(lambda state: False, name="false")
+    combined = conditions[0]
+    for condition in conditions[1:]:
+        combined = combined | condition
+    return combined
+
+
+def stop_all(*conditions: StopCondition) -> StopCondition:
+    if not conditions:
+        return StopCondition(lambda state: True, name="true")
+    combined = conditions[0]
+    for condition in conditions[1:]:
+        combined = combined & condition
     return combined
