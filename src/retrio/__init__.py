@@ -1,3 +1,3 @@
-from ._retry import RetryConfig, RetryState, Retrying, retry
+from ._retry import RetryConfig, RetryEvent, RetryState, Retrying, retry
 
-__all__ = ["RetryConfig", "RetryState", "Retrying", "retry"]
+__all__ = ["RetryConfig", "RetryEvent", "RetryState", "Retrying", "retry"]
