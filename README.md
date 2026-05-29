@@ -136,6 +136,7 @@ Combined behavior
 
 You can combine the two; the `RetryConfig` checks the rate limiter and circuit breaker before each attempt. If the limiter denies the attempt, the retry raises a `RuntimeError("rate limited")`. If the circuit is open, it raises `RuntimeError("circuit open")` to fail fast.
 
+```python
 try:
     fetch()
 except RuntimeError:

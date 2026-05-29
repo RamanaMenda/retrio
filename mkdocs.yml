@@ -1,0 +1,11 @@
+site_name: retrio
+nav:
+  - Home: index.md
+  - Usage: usage.md
+  - Examples: examples.md
+
+theme:
+  name: material
+
+extra:
+  repository_url: https://github.com/RamanaMenda/retrio
