@@ -14,15 +14,13 @@ from random import Random
 from time import monotonic, sleep
 from typing import Any, Callable, TypeVar
 
-F = TypeVar("F", bound=Callable[..., Any])
 from ._observability import (
     RetryEvent,
     _emit_event,
-    _format_event,
-    _log_level_for_event,
-    _safe_event_callback,
     _safe_state_callback,
 )
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 @dataclass(slots=True)

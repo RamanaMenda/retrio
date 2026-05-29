@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import threading
 from time import monotonic
-from typing import Any
+# typing.Any was unused
 
 
 class CircuitOpenError(RuntimeError):

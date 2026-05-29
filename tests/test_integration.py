@@ -1,5 +1,4 @@
 import pytest
-import time
 
 from retrio import retry, RetryConfig, CircuitBreaker, TokenBucket
 
