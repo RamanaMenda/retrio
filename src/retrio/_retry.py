@@ -60,6 +60,8 @@ class RetryConfig:
     enable_logging: bool = False
     log_style: str = "pretty"
     random: Random = field(default_factory=Random)
+    circuit_breaker: object | None = None
+    rate_limiter: object | None = None
 
     def __post_init__(self) -> None:
         if self.max_attempts < 1:
@@ -127,96 +129,24 @@ async def _sleep(delay: float) -> None:
     await asyncio.sleep(delay)
 
 
-def _callback_error(config: RetryConfig, callback_name: str, exc: Exception) -> None:
-    if config.on_callback_error is not None:
-        try:
-            config.on_callback_error(callback_name, exc)
-        except Exception:
-            pass
-
-    if config.enable_logging or config.logger is not None:
-        logger = config.logger or logging.getLogger(config.logger_name)
-        logger.warning(
-            "retrio callback error: callback=%s error=%s",
-            callback_name,
-            exc,
-        )
-
-    if config.callback_error_mode == "raise":
-        raise exc
-
-
-def _safe_state_callback(
-    config: RetryConfig,
-    callback_name: str,
-    callback: Callable[[RetryState], None] | None,
-    state: RetryState,
-) -> None:
-    if callback is None:
-        return
-    try:
-        callback(state)
-    except Exception as exc:
-        _callback_error(config, callback_name, exc)
-
-
-def _safe_event_callback(config: RetryConfig, event: RetryEvent, state: RetryState) -> None:
-    if config.on_event is None:
-        return
-    try:
-        config.on_event(event, state)
-    except Exception as exc:
-        _callback_error(config, "on_event", exc)
-
-
-def _log_level_for_event(event: RetryEvent) -> int:
-    if event == "attempt_start":
-        return logging.DEBUG
-    if event == "retry_scheduled":
-        return logging.INFO
-    if event == "attempt_success":
-        return logging.INFO
-    if event == "attempt_failure":
-        return logging.WARNING
-    return logging.ERROR
-
-
-def _format_event(config: RetryConfig, state: RetryState) -> str:
-    exc_name = state.exception.__class__.__name__ if state.exception is not None else "none"
-    if config.log_style == "structured":
-        return (
-            f"event={state.event} attempt={state.attempt}/{state.max_attempts} "
-            f"delay={state.delay:.3f}s elapsed={state.elapsed:.3f}s exception={exc_name}"
-        )
-    return (
-        f"retrio {state.event}: attempt {state.attempt}/{state.max_attempts}, "
-        f"delay={state.delay:.3f}s, elapsed={state.elapsed:.3f}s, exception={exc_name}"
-    )
-
-
-def _emit_event(config: RetryConfig, event: RetryEvent, state: RetryState) -> RetryState:
-    event_state = RetryState(
-        attempt=state.attempt,
-        max_attempts=state.max_attempts,
-        exception=state.exception,
-        result=state.result,
-        delay=state.delay,
-        elapsed=state.elapsed,
-        event=event,
-    )
-
-    if config.enable_logging or config.logger is not None:
-        logger = config.logger or logging.getLogger(config.logger_name)
-        logger.log(_log_level_for_event(event), _format_event(config, event_state))
-
-    _safe_event_callback(config, event, event_state)
-    return event_state
-
-
 async def _async_retry_call(func: Callable[..., Any], config: RetryConfig, *args: Any, **kwargs: Any) -> Any:
     start = monotonic()
     last_state = RetryState(attempt=1, max_attempts=config.max_attempts)
     for attempt in range(1, config.max_attempts + 1):
+        # Rate limiter check
+        if config.rate_limiter is not None:
+            allowed = False
+            try:
+                allowed = config.rate_limiter.allow()
+            except Exception:
+                allowed = False
+            if not allowed:
+                raise RuntimeError("rate limited")
+
+        # Circuit breaker check
+        if config.circuit_breaker is not None and not config.circuit_breaker.allow():
+            raise RuntimeError("circuit open")
+
         last_state = _emit_event(
             config,
             "attempt_start",
@@ -256,6 +186,12 @@ async def _async_retry_call(func: Callable[..., Any], config: RetryConfig, *args
                     elapsed=monotonic() - start,
                 ),
             )
+            # inform circuit breaker of success
+            if config.circuit_breaker is not None:
+                try:
+                    config.circuit_breaker.record_success()
+                except Exception:
+                    pass
             _safe_state_callback(config, "on_success", config.on_success, last_state)
             return result
         except Exception as exc:
@@ -269,6 +205,13 @@ async def _async_retry_call(func: Callable[..., Any], config: RetryConfig, *args
                     elapsed=monotonic() - start,
                 ),
             )
+            # inform circuit breaker of failure
+            if config.circuit_breaker is not None:
+                try:
+                    config.circuit_breaker.record_failure()
+                except Exception:
+                    pass
+
             if attempt >= config.max_attempts or not _should_retry(config, exc=exc):
                 last_state = _emit_event(
                     config,
@@ -305,6 +248,20 @@ def _sync_retry_call(func: Callable[..., Any], config: RetryConfig, *args: Any, 
     start = monotonic()
     last_state = RetryState(attempt=1, max_attempts=config.max_attempts)
     for attempt in range(1, config.max_attempts + 1):
+        # Rate limiter check
+        if config.rate_limiter is not None:
+            allowed = False
+            try:
+                allowed = config.rate_limiter.allow()
+            except Exception:
+                allowed = False
+            if not allowed:
+                raise RuntimeError("rate limited")
+
+        # Circuit breaker check
+        if config.circuit_breaker is not None and not config.circuit_breaker.allow():
+            raise RuntimeError("circuit open")
+
         last_state = _emit_event(
             config,
             "attempt_start",
@@ -342,6 +299,13 @@ def _sync_retry_call(func: Callable[..., Any], config: RetryConfig, *args: Any, 
                     elapsed=monotonic() - start,
                 ),
             )
+            # inform circuit breaker of success
+            if config.circuit_breaker is not None:
+                try:
+                    config.circuit_breaker.record_success()
+                except Exception:
+                    pass
+
             _safe_state_callback(config, "on_success", config.on_success, last_state)
             return result
         except Exception as exc:
@@ -355,6 +319,13 @@ def _sync_retry_call(func: Callable[..., Any], config: RetryConfig, *args: Any, 
                     elapsed=monotonic() - start,
                 ),
             )
+            # inform circuit breaker of failure
+            if config.circuit_breaker is not None:
+                try:
+                    config.circuit_breaker.record_failure()
+                except Exception:
+                    pass
+
             if attempt >= config.max_attempts or not _should_retry(config, exc=exc):
                 last_state = _emit_event(
                     config,
