@@ -1,0 +1,40 @@
+name: Docs and Examples
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  docs_examples:
+    name: Docs, Tests & Examples
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.9, 3.10, 3.11, 3.12]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build mkdocs
+
+      - name: Build docs
+        run: mkdocs build
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Run examples
+        run: |
+          python examples/sync_example.py
+          python examples/async_example.py
+          python examples/datadog_example.py || true
